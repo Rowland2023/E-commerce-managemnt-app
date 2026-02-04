@@ -7,9 +7,9 @@ WORKDIR /app
 # Install system dependencies needed for some PDF libraries
 RUN apt-get update && apt-get install -y \
     build-essential \
-    python3-dev \
+    libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements first to leverage Docker cache
 # Create a requirements.txt in this folder with: fastapi, uvicorn, reportlab, pydantic
 COPY requirements.txt .
