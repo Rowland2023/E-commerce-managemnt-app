@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - NODE_ENV=development
+      - POSTGRES_DB=ecommerce_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+
+  django_admin:
+    build: ./ecommerceapp
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./ecommerceapp:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  invoice_service:
+    build: ./services/invoice_service
+    # Direct call to uvicorn to fix the module error
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
+    volumes:
+      - ./services/invoice_service:/app
+    ports:
+      - "8001:8001"
+
+  employee_app:
+    build: ./services/employee_app
+    command: npm start
+    volumes:
+      - ./services/employee_app:/app
+      - /app/node_modules  # <--- THE MAGIC LINE
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
