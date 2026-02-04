@@ -1,8 +1,11 @@
 # Use the official Node.js 18 LTS image
 FROM node:18-slim
 
-# Create and set the working directory
+# Install curl for healthchecks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+# ... rest of your file (COPY, RUN npm install, etc.)
 
 # Copy package.json and package-lock.json first
 COPY package*.json ./

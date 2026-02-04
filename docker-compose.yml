@@ -1,33 +1,72 @@
-version: "3.9"
-
 services:
-  web:
-    build: .
-    command: gunicorn ecommerceapp.wsgi:application --bind 0.0.0.0:8000 --workers 3
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    depends_on:
-      - db
-      - redis
-
+  # 1. Shared Database
   db:
     image: postgres:15
     restart: always
     environment:
-      POSTGRES_DB: ${DATABASE_NAME:-db_name}
-      POSTGRES_USER: ${DATABASE_USER:-user}
+      POSTGRES_DB: ${DATABASE_NAME:-ecommerce_db}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  redis:
-    image: redis:7
-    restart: always
+  # 2. Django Service (In root folder)
+  web:
+    build:
+      context: ./ecommerceapp
+      dockerfile: Dockerfile
     volumes:
-      - redis_data:/data
+      - ./ecommerceapp:/app
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 8000))'"]
+      interval: 10s
+      retries: 3
 
+  # 3. Employee Service (Inside services/ folder)
+  employee_service:
+    build:
+      context: ./services/employee_app 
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/employee_app:/app
+      - /app/node_modules
+    ports:
+      - "3001:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://localhost:3000/health\", (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))'"]
+      interval: 10s
+      retries: 3
+
+  # 4. Invoice Service (Inside services/ folder)
+  invoice_service:
+    build:
+      context: ./services/invoice_service
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/invoice_service:/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 8001))'"]
+      interval: 10s
+      retries: 3
+
+  # 5. Reverse Proxy
   nginx:
     image: nginx:latest
     restart: always
@@ -35,11 +74,13 @@ services:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./staticfiles:/app/staticfiles
-      - ./media:/app/media
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+      employee_service:
+        condition: service_healthy
+      invoice_service:
+        condition: service_healthy
 
 volumes:
   postgres_data:
-  redis_data:

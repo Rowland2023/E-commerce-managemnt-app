@@ -10,26 +10,28 @@ app.use(cors());
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
-// 1. Define the Health Check early
+// --- HEALTH CHECKS ---
+// Standard root check
 app.get('/', (req, res) => {
   res.json({ status: "success", message: "Employee API is live" });
 });
 
-// 2. The Startup Wrapper
+// Docker-specific health check
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 const startServer = async () => {
   try {
     console.log('⏳ Connecting to Database...');
     await sequelize.authenticate();
     
-    // THIS MUST RUN BEFORE WE IMPORT ROUTERS THAT USE MODELS
     console.log('⏳ Syncing Database Models...');
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ force: true });
     console.log('✅ Database synchronized.');
 
-    // 3. NOW IMPORT THE ROUTERS (Dynamic Import)
-    // This prevents them from querying the DB before the sync is done
-    // Check these filenames against your actual folder structure!
-    const { default: authRouter } = await import('./controller/authController.js'); // Changed from authRouter
+    // Dynamic Imports
+    const { default: authRouter } = await import('./controller/authController.js');
     const { default: employeeRouter } = await import('./controller/employeeController.js');
     const { default: departmentRouter } = await import('./controller/departmentController.js');
     const { default: authMiddleware } = await import('./Middleware/authMiddleware.js');
@@ -44,7 +46,6 @@ const startServer = async () => {
 
   } catch (error) {
     console.error('❌ Startup Error:', error.message);
-    // Wait 5 seconds and try again instead of crashing nodemon
     setTimeout(startServer, 5000);
   }
 };
