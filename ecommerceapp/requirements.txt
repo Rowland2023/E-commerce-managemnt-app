@@ -1,0 +1,39 @@
+# Core Django & API
+Django>=5.1,<5.2
+djangorestframework==3.15.1
+djangorestframework-simplejwt==5.3.0
+django-filter==24.3
+django-cors-headers==4.4.0
+
+# Database & Config
+psycopg2-binary==2.9.9
+dj-database-url==2.1.0
+django-environ==0.11.2
+python-decouple==3.8
+python-dotenv==0.21.1
+
+# Background Tasks & Redis
+celery==5.3.0
+redis==5.0.8
+django-redis==5.4.0
+
+# Utilities
+requests==2.31.0
+pandas==2.2.2
+numpy==2.1.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+bcrypt==4.2.1
+PyJWT==2.8.0
+
+# Server (Production)
+gunicorn==23.0.0
+
+# Supporting libs (These are often dependencies of the above)
+asgiref==3.8.1
+certifi==2025.8.3
+charset-normalizer==3.4.3
+click==8.1.8
+idna==3.10
+sqlparse==0.4.4
+urllib3==2.0.7
