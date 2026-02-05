@@ -1,86 +1,53 @@
 services:
-  # 1. Shared Database
   db:
     image: postgres:15
-    restart: always
+    env_file: .env
     environment:
-      POSTGRES_DB: ${DATABASE_NAME:-ecommerce_db}
-      POSTGRES_USER: ${DATABASE_USER:-postgres}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      # Use the variables Postgres expects, or defaults to ensure it passes
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
-  # 2. Django Service (In root folder)
   web:
-    build:
-      context: ./ecommerceapp
-      dockerfile: Dockerfile
+    build: ./ecommerceapp
+    env_file: .env
     volumes:
       - ./ecommerceapp:/app
-    env_file: .env
+      - static_volume:/app/staticfiles
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn --chdir /app ecommerceapp.wsgi:application --bind 0.0.0.0:8000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
+      # We use curl or a simple python check to see if the port is open
       test: ["CMD-SHELL", "python -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 8000))'"]
       interval: 10s
-      retries: 3
-
-  # 3. Employee Service (Inside services/ folder)
-  employee_service:
-    build:
-      context: ./services/employee_app 
-      dockerfile: Dockerfile
-    volumes:
-      - ./services/employee_app:/app
-      - /app/node_modules
-    ports:
-      - "3001:3000"
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://localhost:3000/health\", (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))'"]
-      interval: 10s
-      retries: 3
-
-  # 4. Invoice Service (Inside services/ folder)
-  invoice_service:
-    build:
-      context: ./services/invoice_service
-      dockerfile: Dockerfile
-    volumes:
-      - ./services/invoice_service:/app
-    ports:
-      - "8001:8001"
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 8001))'"]
-      interval: 10s
-      retries: 3
-
-  # 5. Reverse Proxy
+      timeout: 5s
+      retries: 5
   nginx:
     image: nginx:latest
-    restart: always
     ports:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_volume:/app/staticfiles:ro
     depends_on:
       web:
-        condition: service_healthy
-      employee_service:
-        condition: service_healthy
-      invoice_service:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  static_volume:

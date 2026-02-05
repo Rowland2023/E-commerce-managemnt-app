@@ -1,17 +1,24 @@
 import os
 import dj_database_url
-from decouple import Config, RepositoryEnv
+from decouple import config, Config, RepositoryEnv
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# dev.py (file) -> settings (parent) -> ecommerceapp (parent) -> root (parent)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Always load .env.dev for development
-config = Config(RepositoryEnv(BASE_DIR / ".env.dev"))
+# Fallback for Docker: Check for .env.dev, if not, use standard .env
+env_file = BASE_DIR / ".env.dev"
+if not env_file.exists():
+    env_file = BASE_DIR / ".env"
 
 # Core security
 SECRET_KEY = config("DJANGO_SECRET_KEY", default="django-insecure-dev-key")
-DEBUG = True   # Always True in dev
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+DEBUG = True 
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1,web,nginx").split(",")
+
+# --- CRITICAL MISSING SETTINGS ---
+ROOT_URLCONF = "ecommerceapp.urls"
+WSGI_APPLICATION = "ecommerceapp.wsgi.application"
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -68,7 +75,7 @@ DATABASES = {
     'default': dj_database_url.config(
         default=config(
             "DATABASE_URL",
-            default="postgres://postgres:God4me%402025@localhost:5432/store_db"
+            default="postgres://postgres:God4me@2025@db:5432/store_db"
         ),
         conn_max_age=600,
     )
@@ -110,5 +117,5 @@ SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 SECURE_PROXY_SSL_HEADER = None
 
-ROOT_URLCONF = "ecommerceapp.urls"
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
