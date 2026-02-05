@@ -5,6 +5,13 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 
 app = FastAPI(title="Invoice Generation Service")
+@app.get("/") 
+def root(): 
+    return {"status": "success", "message": "Invoice API is live"} 
+
+@app.get("/health") 
+def health(): 
+    return {"status": "ok"}
 
 class InvoiceData(BaseModel):
     order_id: str

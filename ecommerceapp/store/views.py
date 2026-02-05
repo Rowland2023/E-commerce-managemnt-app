@@ -76,3 +76,9 @@ class OutboxViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OutboxSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "event_type"]
+
+# views.py
+from django.http import JsonResponse
+
+def home(request):
+    return JsonResponse({"message": "Welcome to the Ecommerce API"})

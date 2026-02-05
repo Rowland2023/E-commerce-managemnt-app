@@ -18,11 +18,13 @@ Including another URLconf
 # myproject/urls.py
 from django.contrib import admin
 from django.urls import path, include
+from django.http import HttpResponse
 from store.admin import mysite
-
+def home(request):
+    return HttpResponse("Welcome to the Ecommerce Home Page!")
 urlpatterns = [
     # Django admin
-    
+    path("", home),
     path('admin/', mysite.urls),
     # API routes from your store app
     path('', include('store.urls')),
