@@ -1,18 +1,19 @@
 import os
 import dj_database_url
-from decouple import Config, RepositoryEnv
 from pathlib import Path
+from decouple import config # Simplified import
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# 1. PATH CONFIGURATION
+# dev.py is at: ecommerceapp/ecommerceapp/settings/dev.py
+# .parent.parent.parent gets us to the root where manage.py lives
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Always load .env.dev for development
-config = Config(RepositoryEnv(BASE_DIR / ".env.dev"))
-
-# Core security
+# 2. CORE SECURITY
 SECRET_KEY = config("DJANGO_SECRET_KEY", default="django-insecure-dev-key")
-DEBUG = True   # Always True in dev
-ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+DEBUG = True 
+ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1,django_admin,nginx_gateway").split(",")
 
+# 3. APP DEFINITION
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -23,11 +24,12 @@ INSTALLED_APPS = [
     "rest_framework",
     "django_filters",
     "corsheaders",
-    "store",
+    "store",  # Your custom app
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware", # For static files
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -36,20 +38,15 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-# ecommerceapp/ecommerceapp/settings/dev.py
-from pathlib import Path
 
-# 1. Updated BASE_DIR to reach the project root (3 levels up from dev.py)
-# dev.py (file) -> settings (parent) -> ecommerceapp (parent) -> root (parent)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# 4. ROUTING & WSGI
+ROOT_URLCONF = "ecommerceapp.urls"
+WSGI_APPLICATION = "ecommerceapp.wsgi.application"
 
-# ... other settings ...
-
-# 2. Updated TEMPLATES configuration
+# 5. TEMPLATES
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # This now correctly points to the 'templates' folder next to manage.py
         "DIRS": [BASE_DIR / "templates"], 
         "APP_DIRS": True,
         "OPTIONS": {
@@ -63,53 +60,45 @@ TEMPLATES = [
     },
 ]
 
-# Database
+# 6. DATABASE
+# Inside Docker, we use the service name 'db'
 DATABASES = {
     'default': dj_database_url.config(
         default=config(
             "DATABASE_URL",
-            default="postgres://postgres:God4me%402025@localhost:5432/store_db"
+            default="postgres://postgres:postgres@db:5432/ecommerce_db"
         ),
         conn_max_age=600,
     )
 }
 
-# --- REDIS IS DOWN FIX ---
-# Switch from Redis to Local Memory Cache
+# 7. CACHE & SESSIONS (Redis-Free Fallback)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "unique-snowflake",
     }
 }
-
-# Switch from Redis Cache Sessions to Database Sessions
-# This prevents the "Unending Processing" loop caused by Redis timeouts
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
-# -------------------------
 
-# Static and Media
+# 8. STATIC & MEDIA
 STATIC_URL = "/static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
+# Using standard storage for dev to avoid manifest errors during initial boot
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Email (Console backend so you can see emails in your terminal)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-
-# CORS & CSRF
+# 9. CORS & CSRF
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(",")
-CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000', 'http://localhost:8000']
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="http://localhost:8000,http://127.0.0.1:8000").split(",")
 
-# Dev Security - NO REDIRECTS
-SECURE_SSL_REDIRECT = False
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-USE_X_FORWARDED_HOST = True
-SECURE_PROXY_SSL_HEADER = None
+# 10. INTERNATIONALIZATION
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'UTC'
+USE_I18N = True
+USE_TZ = True
 
-ROOT_URLCONF = "ecommerceapp.urls"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

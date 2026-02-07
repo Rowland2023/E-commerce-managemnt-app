@@ -1,6 +1,3 @@
-import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
-
 const Employee = sequelize.define('Employee', {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   firstName: { type: DataTypes.STRING, allowNull: false },
@@ -10,7 +7,10 @@ const Employee = sequelize.define('Employee', {
   departmentId: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    references: { model: 'Departments', key: 'id' }
+    // Change 'Departments' to 'departments' to match your Department model
+    references: { model: 'departments', key: 'id' } 
   }
+}, {
+  tableName: 'employees', // Add this line
+  timestamps: true        // Match your department settings
 });
-export default Employee

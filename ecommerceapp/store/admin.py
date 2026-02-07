@@ -13,15 +13,37 @@ from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin, GroupAdmin
 from django.urls import path
 from django import forms
+from django.http import HttpResponseRedirect
 
 from .models import (
     Customer, Product, Order, OrderItem,
-    Payment, Shipment, Outbox
+    Payment, Shipment, Outbox, EmployeeLink, InvoiceLink
 )
 
 # -------------------------------------------------------------------
-# 1. Custom Admin Site
+# 1. External Service Link Admins (The Redirectors)
 # -------------------------------------------------------------------
+
+class EmployeeLinkAdmin(admin.ModelAdmin):
+    """Redirects sidebar click to the Node.js Employee Service via Nginx"""
+    def has_add_permission(self, request): return False
+    def has_delete_permission(self, request, obj=None): return False
+
+    def changelist_view(self, request, extra_context=None):
+        return HttpResponseRedirect('/employee')
+
+class InvoiceLinkAdmin(admin.ModelAdmin):
+    """Redirects sidebar click to the FastAPI Invoice Service Docs via Nginx"""
+    def has_add_permission(self, request): return False
+    def has_delete_permission(self, request, obj=None): return False
+
+    def changelist_view(self, request, extra_context=None):
+        return HttpResponseRedirect('/api/v1/invoices/docs')
+
+# -------------------------------------------------------------------
+# 2. Custom Admin Site (Dashboard & KPI Logic)
+# -------------------------------------------------------------------
+
 class MyAdminSite(admin.AdminSite):
     site_header = "E-Commerce Management Dashboard"
 
@@ -35,11 +57,11 @@ class MyAdminSite(admin.AdminSite):
 
     def employee_stats_view(self, request):
         try:
-            # Note: Using 'employee_app' for Docker, 'localhost' for local testing
-            response = requests.get("http://employee_app:3000/api/employees/summary", timeout=2)
+            # UPDATED: Internal Docker DNS uses 'employee_app'
+            response = requests.get("http://employee_service:3000/api/employees/summary", timeout=2)
             employee_data = response.json()
-        except:
-            employee_data = {"error": "Node.js Service Offline"}
+        except Exception:
+            employee_data = {"error": "Node.js Service (employee_app) Offline"}
 
         context = {
             **self.each_context(request),
@@ -64,6 +86,7 @@ class MyAdminSite(admin.AdminSite):
 
         # --- Microservice Employee Count ---
         try:
+            # UPDATED: Internal Docker DNS uses 'employee_app'
             node_response = requests.get("http://employee_app:3000/api/employees/count", timeout=2)
             employee_count = node_response.json().get('count', 0)
         except Exception:
@@ -85,8 +108,9 @@ mysite = MyAdminSite(name='myadmin')
 mysite.index_template = 'admin/index.html'
 
 # -------------------------------------------------------------------
-# 2. Actions & Utility Views
+# 3. Actions & Utility Views
 # -------------------------------------------------------------------
+
 def get_order_total(request, order_id):
     try:
         order = Order.objects.get(pk=order_id)
@@ -96,21 +120,23 @@ def get_order_total(request, order_id):
 
 @admin.action(description="Download PDF Invoice")
 def download_invoice(modeladmin, request, queryset):
-    # For simplicity, we process the first selected item in this action
     order = queryset.first() 
+    if not order: return HttpResponse("No order selected", status=400)
+    
     payload = {
         "order_id": str(order.id),
         "customer_name": f"{order.customer.first_name} {order.customer.last_name}",
         "amount": float(order.total_due),
-        "items": [{"name": i.product.name, "price": float(i.price_at_purchase)} for i in order.orderitem_set.all()]
+        "items": [{"name": i.product.name, "price": float(i.price_at_purchase)} for i in order.items.all()]
     }
     try:
+        # Internal Docker DNS for FastAPI
         response = requests.post("http://invoice_service:8001/generate-invoice/", json=payload, timeout=5)
         if response.status_code == 200:
             django_response = HttpResponse(response.content, content_type='application/pdf')
             django_response['Content-Disposition'] = f'attachment; filename="invoice_{order.id}.pdf"'
             return django_response
-    except:
+    except Exception:
         return HttpResponse("Invoice Service Unavailable", status=503)
 
 @admin.action(description="Export selected orders to CSV")
@@ -124,8 +150,9 @@ def export_orders_to_csv(modeladmin, request, queryset):
     return response
 
 # -------------------------------------------------------------------
-# 3. Admins & Inlines
+# 4. Admins & Inlines
 # -------------------------------------------------------------------
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
@@ -136,17 +163,10 @@ class OrderItemInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = ['id', 'customer', 'date_order', 'complete', 'total_due']
     inlines = [OrderItemInline]
-    actions = [export_orders_to_csv, download_invoice] # Added download_invoice here
+    actions = [export_orders_to_csv, download_invoice]
     readonly_fields = ['total_due']
     class Media:
         js = ('js/admin_order_calc.js',)
-
-    def save_formset(self, request, form, formset, change):
-        formset.save()
-        obj = form.instance
-        total = obj.orderitem_set.aggregate(total=Sum(F('quantity') * F('price_at_purchase')))['total'] or 0
-        obj.total_due = total
-        obj.save(update_fields=['total_due'])
 
 @admin.register(Product, site=mysite)
 class ProductAdmin(admin.ModelAdmin):
@@ -156,12 +176,14 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(Payment, site=mysite)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ['id', 'order', 'amount', 'method', 'status', 'created_at']
-    class Media:
-        js = ('js/payment_autofill.js',)
 
 # -------------------------------------------------------------------
-# 4. Final Registrations
+# 5. Final Registrations
 # -------------------------------------------------------------------
+
+mysite.register(EmployeeLink, EmployeeLinkAdmin)
+mysite.register(InvoiceLink, InvoiceLinkAdmin)
+
 class CustomerInline(admin.StackedInline):
     model = Customer
     can_delete = False
@@ -171,5 +193,5 @@ class CustomUserAdmin(UserAdmin):
 
 mysite.register(User, CustomUserAdmin)
 mysite.register(Group, GroupAdmin)
-mysite.register(Shipment)
-mysite.register(Outbox)
+mysite.register(Shipment, site=mysite)
+mysite.register(Outbox, site=mysite)

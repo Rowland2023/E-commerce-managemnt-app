@@ -13,6 +13,11 @@ def root():
 def health(): 
     return {"status": "ok"}
 
+@app.get("/api/v1/invoices")
+def invoices_root():
+    return {"status": "success", "message": "Invoices endpoint is live"}
+
+
 class InvoiceData(BaseModel):
     order_id: str
     customer_name: str
