@@ -1,9 +1,24 @@
 from django.db import models
 from django.conf import settings
 
-# 1. Customer Model (Profile for the User)
+# --- 1. EXTERNAL SERVICE LINK MODELS (Proxy/Dummy) ---
+# These do not create tables but allow links in the Admin sidebar.
+class EmployeeLink(models.Model):
+    class Meta:
+        managed = False  # No database table created
+        verbose_name = "Employee Management"
+        verbose_name_plural = "Employee Management"
+
+class InvoiceLink(models.Model):
+    class Meta:
+        managed = False # No database table created
+        verbose_name = "Invoice System"
+        verbose_name_plural = "Invoice System"
+
+
+# --- 2. CUSTOMER & PRODUCT CORE ---
 class Customer(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE , null=True,blank=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     first_name = models.CharField(max_length=200)
     last_name = models.CharField(max_length=200)
     email = models.EmailField(max_length=255)
@@ -11,10 +26,6 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
-
-
-# 2. Product Catalog (The "Menu" of items)
-from django.contrib.auth.models import User
 
 class Product(models.Model):
     name = models.CharField(max_length=200)
@@ -26,8 +37,9 @@ class Product(models.Model):
         return self.name
 
 
+# --- 3. ORDERING LOGIC ---
 class Order(models.Model):
-    customer = models.ForeignKey("Customer", on_delete=models.CASCADE, related_name="orders")
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="orders")
     date_order = models.DateTimeField(auto_now_add=True)
     complete = models.BooleanField(default=False)
     transaction_id = models.CharField(max_length=100, null=True, blank=True)
@@ -41,7 +53,6 @@ class Order(models.Model):
     def __str__(self):
         return f"Order {self.id} - {self.customer}"
 
-
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
@@ -49,11 +60,10 @@ class OrderItem(models.Model):
     price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
 
     def save(self, *args, **kwargs):
-        # Ensure price_at_purchase is set from product
         if not self.price_at_purchase:
             self.price_at_purchase = self.product.current_price
         super().save(*args, **kwargs)
-        # Update the parent order’s total
+        # Recalculate parent order total
         self.order.update_total_due()
 
     def get_total(self):
@@ -62,19 +72,18 @@ class OrderItem(models.Model):
     def __str__(self):
         return f"{self.quantity} x {self.product.name}"
 
-# 5. Payment Model (Tracks transactions)
+
+# --- 4. FULFILLMENT & PAYMENTS ---
 class Payment(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="payments")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    method = models.CharField(max_length=50)  # e.g., "Card", "Bank Transfer"
+    method = models.CharField(max_length=50) 
     status = models.CharField(max_length=20, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Payment {self.id} - Order {self.order.id} ({self.status})"
 
-
-# 6. Shipment Model (Delivery/Tracking info)
 class Shipment(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="shipments")
     tracking_number = models.CharField(max_length=100, null=True, blank=True)
@@ -85,7 +94,7 @@ class Shipment(models.Model):
         return f"Shipment {self.id} - Order {self.order.id} ({self.status})"
 
 
-# 7. Outbox Model (Reliable Messaging Buffer)
+# --- 5. MICROSERVICES OUTBOX ---
 class Outbox(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -101,7 +110,6 @@ class Outbox(models.Model):
     processed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        # Indexing for the background worker/relayer
         indexes = [
             models.Index(fields=["status", "created_at"]),
         ]

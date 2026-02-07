@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 # Install Python dependencies
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-django.txt . 
+RUN pip install --no-cache-dir -r requirements-django.txt
 
 # Copy project files into the container
 COPY . /app/
