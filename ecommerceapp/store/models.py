@@ -1,17 +1,20 @@
 from django.db import models
 from django.conf import settings
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+import requests
+import json
 
 # --- 1. EXTERNAL SERVICE LINK MODELS (Proxy/Dummy) ---
-# These do not create tables but allow links in the Admin sidebar.
 class EmployeeLink(models.Model):
     class Meta:
-        managed = False  # No database table created
+        managed = False  
         verbose_name = "Employee Management"
         verbose_name_plural = "Employee Management"
 
 class InvoiceLink(models.Model):
     class Meta:
-        managed = False # No database table created
+        managed = False 
         verbose_name = "Invoice System"
         verbose_name_plural = "Invoice System"
 
@@ -63,7 +66,6 @@ class OrderItem(models.Model):
         if not self.price_at_purchase:
             self.price_at_purchase = self.product.current_price
         super().save(*args, **kwargs)
-        # Recalculate parent order total
         self.order.update_total_due()
 
     def get_total(self):
@@ -116,3 +118,39 @@ class Outbox(models.Model):
 
     def __str__(self):
         return f"Outbox Event {self.id} - {self.event_type} ({self.status})"
+
+
+# --- 6. SIGNALS FOR AUTOMATION ---
+
+@receiver(post_save, sender=Payment)
+def trigger_invoice_on_payment(sender, instance, created, **kwargs):
+    """
+    Automatically triggers the Invoice Microservice when a payment is marked 'success'.
+    It also creates an Outbox entry for reliability.
+    """
+    if instance.status == 'PAID':
+        payload = {
+            "order_id": str(instance.order.id),
+            "customer_name": f"{instance.order.customer.first_name} {instance.order.customer.last_name}",
+            "amount": float(instance.amount),
+            "items": [
+                {"name": i.product.name, "price": float(i.price_at_purchase)} 
+                for i in instance.order.items.all()
+            ]
+        }
+        
+        # 1. Immediate Attempt (FastAPI trigger)
+        try:
+            requests.post("http://invoice_service:8001/generate-invoice/", json=payload, timeout=5)
+            status_for_outbox = "sent"
+            print(f"✅ Automatically generated invoice for Order {instance.order.id}")
+        except Exception as e:
+            status_for_outbox = "failed"
+            print(f"❌ Failed to auto-generate invoice: {e}")
+
+        # 2. Record in Outbox (Audit Trail/Retry logic)
+        Outbox.objects.create(
+            event_type='GENERATE_INVOICE',
+            payload=payload,
+            status=status_for_outbox
+        )

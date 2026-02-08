@@ -20,25 +20,31 @@ from .models import (
     Payment, Shipment, Outbox, EmployeeLink, InvoiceLink
 )
 
-# -------------------------------------------------------------------
-# 1. External Service Link Admins
-# -------------------------------------------------------------------
+# ===================================================================
+# 1. EXTERNAL SERVICE LINK ADMINS (Sidebar Redirectors)
+# ===================================================================
 
 class EmployeeLinkAdmin(admin.ModelAdmin):
+    """Redirects sidebar click to the STYLED Django Employee view"""
     def has_add_permission(self, request): return False
     def has_delete_permission(self, request, obj=None): return False
+
     def changelist_view(self, request, extra_context=None):
-        return HttpResponseRedirect('/employee')
+        return HttpResponseRedirect('/admin/employee-stats/')
 
 class InvoiceLinkAdmin(admin.ModelAdmin):
+    """Redirects sidebar click to the STYLED Django Invoice view"""
     def has_add_permission(self, request): return False
     def has_delete_permission(self, request, obj=None): return False
-    def changelist_view(self, request, extra_context=None):
-        return HttpResponseRedirect('/api/v1/invoices/docs')
 
-# -------------------------------------------------------------------
-# 2. Custom Admin Site (Dashboard & KPI Logic)
-# -------------------------------------------------------------------
+    def changelist_view(self, request, extra_context=None):
+        # Redirect to our new styled Django view instead of raw Docs
+        return HttpResponseRedirect('/admin/invoice-stats/')
+
+
+# ===================================================================
+# 2. CUSTOM ADMIN SITE (Dashboard & Microservice Logic)
+# ===================================================================
 
 class MyAdminSite(admin.AdminSite):
     site_header = "E-Commerce Management Dashboard"
@@ -47,10 +53,12 @@ class MyAdminSite(admin.AdminSite):
         urls = super().get_urls()
         custom_urls = [
             path('employee-stats/', self.admin_view(self.employee_stats_view), name="employee-stats"),
+            path('invoice-stats/', self.admin_view(self.invoice_stats_view), name="invoice-stats"),
             path('get_order_total/<int:order_id>/', self.admin_view(get_order_total)),
         ]
         return custom_urls + urls
 
+    # --- Employee Microservice View ---
     def employee_stats_view(self, request):
         try:
             response = requests.get("http://employee_service:3000/employee", timeout=2)
@@ -63,10 +71,26 @@ class MyAdminSite(admin.AdminSite):
             'title': 'Employee Management System',
             'data': employee_data,
         }
-        return render(request, 'admin/employee_stats.html', context)    
+        return render(request, 'admin/employee_stats.html', context)
 
+    # --- Invoice Microservice View ---
+    def invoice_stats_view(self, request):
+        try:
+            # Internal Docker request to the FastAPI service
+            response = requests.get("http://invoice_service:8001/api/v1/invoices/", timeout=2)
+            invoice_data = response.json()
+        except Exception:
+            invoice_data = []
+
+        context = {
+            **self.each_context(request),
+            'title': 'Invoice Management System',
+            'invoices': invoice_data,
+        }
+        return render(request, 'admin/invoice_stats.html', context)
+
+    # --- Dashboard Index (KPI Logic) ---
     def index(self, request, extra_context=None):
-        # KPI & Sales Logic
         total_revenue = Order.objects.filter(complete=True).aggregate(Sum('total_due'))['total_due__sum'] or 0
         customer_count = Customer.objects.count()
 
@@ -79,33 +103,23 @@ class MyAdminSite(admin.AdminSite):
         )
         chart_data = [{"day": x['day'].strftime('%b %d'), "total": float(x['total'])} for x in sales_data]
 
-        # --- Microservice Employee Count Logic ---
+        # Employee Count from Microservice
         employee_count = 0
         try:
-            # Internal Docker request
             node_response = requests.get("http://employee_service:3000/employee", timeout=2)
-            
             if node_response.status_code == 200:
                 data = node_response.json()
-                # LOGGING: See this in your terminal to verify data flow
-                print(f"DEBUG: Successfully fetched from Node. Data: {data}")
-                
-                if isinstance(data, list):
-                    employee_count = len(data)
-                elif isinstance(data, dict):
-                    employee_count = data.get('count', 0)
+                employee_count = len(data) if isinstance(data, list) else data.get('count', 0)
             else:
-                print(f"DEBUG: Node API error status: {node_response.status_code}")
                 employee_count = "Error"
-        except Exception as e:
-            print(f"DEBUG: Failed to connect to employee_service: {e}")
+        except Exception:
             employee_count = "Offline"
 
         extra_context = extra_context or {}
         extra_context.update({
             'total_revenue': total_revenue,
             'customer_count': customer_count,
-            'employee_count': employee_count, # Verify this variable is used in admin/index.html
+            'employee_count': employee_count,
             'chart_data': json.dumps(chart_data),
             'top_products': OrderItem.objects.values('product__name').annotate(total_sold=Sum('quantity')).order_by('-total_sold')[:5],
             'low_stock_products': Product.objects.filter(stock_quantity__lt=5).order_by('stock_quantity'),
@@ -116,9 +130,10 @@ class MyAdminSite(admin.AdminSite):
 mysite = MyAdminSite(name='myadmin')
 mysite.index_template = 'admin/index.html'
 
-# -------------------------------------------------------------------
-# 3. Actions & Utility Views
-# -------------------------------------------------------------------
+
+# ===================================================================
+# 3. ACTIONS & UTILITY VIEWS
+# ===================================================================
 
 def get_order_total(request, order_id):
     try:
@@ -157,9 +172,10 @@ def export_orders_to_csv(modeladmin, request, queryset):
         writer.writerow([order.id, str(order.customer), order.date_order.strftime("%Y-%m-%d %H:%M"), "Complete" if order.complete else "Pending", order.total_due])
     return response
 
-# -------------------------------------------------------------------
-# 4. Admins & Inlines
-# -------------------------------------------------------------------
+
+# ===================================================================
+# 4. DATA MODEL ADMINS & INLINES
+# ===================================================================
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
@@ -185,9 +201,10 @@ class ProductAdmin(admin.ModelAdmin):
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ['id', 'order', 'amount', 'method', 'status', 'created_at']
 
-# -------------------------------------------------------------------
-# 5. Final Registrations
-# -------------------------------------------------------------------
+
+# ===================================================================
+# 5. FINAL REGISTRATIONS
+# ===================================================================
 
 mysite.register(EmployeeLink, EmployeeLinkAdmin)
 mysite.register(InvoiceLink, InvoiceLinkAdmin)
