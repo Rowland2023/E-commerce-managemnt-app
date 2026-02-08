@@ -2,17 +2,32 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/database.js'; // adjust path to your DB config
 
-const Department = sequelize.define('Department', {
-  name: { 
-    type: DataTypes.STRING, 
-    allowNull: false 
+const Department = sequelize.define("Department", {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+    allowNull: false,
   },
-  budgetCode: { 
-    type: DataTypes.STRING 
-  }
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  location: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
-  tableName: 'departments',   // 👈 explicit table name
-  timestamps: true            // adds createdAt and updatedAt
+  tableName: "departments",
+  timestamps: true, // adds createdAt and updatedAt
 });
+
+// Associations
+Department.associate = (models) => {
+  Department.hasMany(models.Employee, {
+    foreignKey: "departmentId",
+    as: "employees",
+  });
+};
 
 export default Department;

@@ -21,22 +21,18 @@ from .models import (
 )
 
 # -------------------------------------------------------------------
-# 1. External Service Link Admins (The Redirectors)
+# 1. External Service Link Admins
 # -------------------------------------------------------------------
 
 class EmployeeLinkAdmin(admin.ModelAdmin):
-    """Redirects sidebar click to the Node.js Employee Service via Nginx"""
     def has_add_permission(self, request): return False
     def has_delete_permission(self, request, obj=None): return False
-
     def changelist_view(self, request, extra_context=None):
         return HttpResponseRedirect('/employee')
 
 class InvoiceLinkAdmin(admin.ModelAdmin):
-    """Redirects sidebar click to the FastAPI Invoice Service Docs via Nginx"""
     def has_add_permission(self, request): return False
     def has_delete_permission(self, request, obj=None): return False
-
     def changelist_view(self, request, extra_context=None):
         return HttpResponseRedirect('/api/v1/invoices/docs')
 
@@ -57,11 +53,10 @@ class MyAdminSite(admin.AdminSite):
 
     def employee_stats_view(self, request):
         try:
-            # UPDATED: Internal Docker DNS uses 'employee_app'
-            response = requests.get("http://employee_service:3000/api/employees/summary", timeout=2)
+            response = requests.get("http://employee_service:3000/employee", timeout=2)
             employee_data = response.json()
         except Exception:
-            employee_data = {"error": "Node.js Service (employee_app) Offline"}
+            employee_data = {"error": "Node.js Service Offline"}
 
         context = {
             **self.each_context(request),
@@ -71,7 +66,7 @@ class MyAdminSite(admin.AdminSite):
         return render(request, 'admin/employee_stats.html', context)    
 
     def index(self, request, extra_context=None):
-        # --- KPI & Sales Logic ---
+        # KPI & Sales Logic
         total_revenue = Order.objects.filter(complete=True).aggregate(Sum('total_due'))['total_due__sum'] or 0
         customer_count = Customer.objects.count()
 
@@ -84,19 +79,33 @@ class MyAdminSite(admin.AdminSite):
         )
         chart_data = [{"day": x['day'].strftime('%b %d'), "total": float(x['total'])} for x in sales_data]
 
-        # --- Microservice Employee Count ---
+        # --- Microservice Employee Count Logic ---
+        employee_count = 0
         try:
-            # UPDATED: Internal Docker DNS uses 'employee_app'
-            node_response = requests.get("http://employee_app:3000/api/employees/count", timeout=2)
-            employee_count = node_response.json().get('count', 0)
-        except Exception:
+            # Internal Docker request
+            node_response = requests.get("http://employee_service:3000/employee", timeout=2)
+            
+            if node_response.status_code == 200:
+                data = node_response.json()
+                # LOGGING: See this in your terminal to verify data flow
+                print(f"DEBUG: Successfully fetched from Node. Data: {data}")
+                
+                if isinstance(data, list):
+                    employee_count = len(data)
+                elif isinstance(data, dict):
+                    employee_count = data.get('count', 0)
+            else:
+                print(f"DEBUG: Node API error status: {node_response.status_code}")
+                employee_count = "Error"
+        except Exception as e:
+            print(f"DEBUG: Failed to connect to employee_service: {e}")
             employee_count = "Offline"
 
         extra_context = extra_context or {}
         extra_context.update({
             'total_revenue': total_revenue,
             'customer_count': customer_count,
-            'employee_count': employee_count,
+            'employee_count': employee_count, # Verify this variable is used in admin/index.html
             'chart_data': json.dumps(chart_data),
             'top_products': OrderItem.objects.values('product__name').annotate(total_sold=Sum('quantity')).order_by('-total_sold')[:5],
             'low_stock_products': Product.objects.filter(stock_quantity__lt=5).order_by('stock_quantity'),
@@ -130,7 +139,6 @@ def download_invoice(modeladmin, request, queryset):
         "items": [{"name": i.product.name, "price": float(i.price_at_purchase)} for i in order.items.all()]
     }
     try:
-        # Internal Docker DNS for FastAPI
         response = requests.post("http://invoice_service:8001/generate-invoice/", json=payload, timeout=5)
         if response.status_code == 200:
             django_response = HttpResponse(response.content, content_type='application/pdf')
