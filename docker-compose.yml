@@ -14,6 +14,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ecommerce_network
 
   django_admin:
     build:
@@ -22,7 +24,6 @@ services:
     container_name: django_admin
     env_file: .env
     environment:
-      # This is the critical fix for the ROOT_URLCONF error
       - DJANGO_SETTINGS_MODULE=ecommerceapp.settings.dev
     command: >
       sh -c "python manage.py migrate --noinput && 
@@ -41,6 +42,27 @@ services:
       retries: 3
     ports:
       - "8000:8000"
+    networks:
+      - ecommerce_network
+
+  # --- NEW: Outbox Relay Service ---
+  outbox_relay:
+    build:
+      context: ./ecommerceapp # Points to your Django app code
+    container_name: outbox_relay
+    env_file: .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=ecommerceapp.settings.dev
+    command: python manage.py process_outbox
+    depends_on:
+      django_admin:
+        condition: service_healthy
+      invoice_service:
+        condition: service_started
+    volumes:
+      - ./ecommerceapp:/app
+    networks:
+      - ecommerce_network
 
   employee_service:
     build:
@@ -53,6 +75,8 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    networks:
+      - ecommerce_network
 
   invoice_service:
     build:
@@ -60,13 +84,14 @@ services:
       dockerfile: Dockerfile
     container_name: invoice_service
     env_file: .env
-    # Aligned with Nginx config port 8001
     command: python -m uvicorn main:app --host 0.0.0.0 --port 8001
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8001:8001"
+    networks:
+      - ecommerce_network
 
   nginx:
     image: nginx:latest
@@ -83,6 +108,12 @@ services:
         condition: service_started
       invoice_service:
         condition: service_started
+    networks:
+      - ecommerce_network
+
+networks:
+  ecommerce_network:
+    driver: bridge
 
 volumes:
   postgres_data:
