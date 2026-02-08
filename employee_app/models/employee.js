@@ -1,16 +1,17 @@
+// models/employee.js
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
+
 const Employee = sequelize.define('Employee', {
-  id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   firstName: { type: DataTypes.STRING, allowNull: false },
   lastName: { type: DataTypes.STRING, allowNull: false },
-  email: { type: DataTypes.STRING, unique: true, allowNull: false },
-  salary: { type: DataTypes.FLOAT, allowNull: false },
-  departmentId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    // Change 'Departments' to 'departments' to match your Department model
-    references: { model: 'departments', key: 'id' } 
-  }
+  email: { type: DataTypes.STRING, unique: true },
+  salary: { type: DataTypes.DECIMAL },
+  departmentId: { type: DataTypes.INTEGER }
 }, {
-  tableName: 'employees', // Add this line
-  timestamps: true        // Match your department settings
+  tableName: 'employees', // 👈 This MUST match your SQL error target
+  timestamps: true
 });
+
+// THIS IS THE CRITICAL LINE
+export default Employee;

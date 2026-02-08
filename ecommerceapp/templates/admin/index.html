@@ -2,88 +2,126 @@
 {% load static %}
 
 {% block content %}
-{% if low_stock_count > 0 %}
-<div class="alert alert-low-stock">
-    <h3 class="alert-title">
-        <span class="alert-icon">⚠️</span> Low Stock Alert ({{ low_stock_count }} items)
-    </h3>
-    <ul class="alert-list">
-        {% for product in low_stock_products %}
-        <li>
-            <strong>{{ product.name }}</strong>: Only <strong>{{ product.stock_quantity }}</strong> left.
-            <a href="{% url 'admin:store_product_change' product.pk %}" class="alert-link">Update Stock →</a>
-        </li>
-        {% endfor %}
-    </ul>
-</div>
-{% endif %}
+<style>
+    /* Dashboard Layout & KPI Styling */
+    .dashboard-container { font-family: 'Roboto', sans-serif; margin-bottom: 20px; }
+    .kpi-row { 
+        display: flex; 
+        gap: 15px; 
+        margin-bottom: 20px; 
+        flex-wrap: wrap;
+    }
+    .kpi-card { 
+        background: #fff; 
+        padding: 20px; 
+        border-radius: 4px; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+        flex: 1; 
+        min-width: 200px;
+        border-top: 4px solid #417690;
+    }
+    .kpi-card.highlight { border-top-color: #f5dd5d; } /* Special color for Microservice data */
+    .kpi-title { color: #666; font-size: 0.85rem; text-transform: uppercase; font-weight: bold; display: block; }
+    .kpi-value { font-size: 1.8rem; font-weight: bold; color: #333; display: block; margin-top: 5px; }
+    
+    .status-pending { background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; }
+    .status-success { background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; }
+</style>
 
-<div class="dashboard-grid">
-    <!-- Revenue Chart -->
-    <div class="card card-large">
-        <h3 class="card-title">Daily Revenue (Last 7 Days)</h3>
-        <div class="chart-container">
-            <canvas id="salesChart"></canvas>
+<div class="dashboard-container">
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <span class="kpi-title">Total Revenue</span>
+            <span class="kpi-value">${{ total_revenue }}</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title">Total Customers</span>
+            <span class="kpi-value">{{ customer_count }}</span>
+        </div>
+        <div class="kpi-card highlight">
+            <span class="kpi-title">Staff (Node Service)</span>
+            <span class="kpi-value">{{ employee_count }}</span>
         </div>
     </div>
 
-    <!-- Top Products -->
-    <div class="card card-small">
-        <h3 class="card-title">Top 5 Selling Products</h3>
+    {% if low_stock_count > 0 %}
+    <div class="alert alert-low-stock" style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; margin-bottom: 20px; border: 1px solid #f5c6cb;">
+        <h3 style="margin-top: 0;"><span class="alert-icon">⚠️</span> Low Stock Alert ({{ low_stock_products|length }} items)</h3>
+        <ul class="alert-list">
+            {% for product in low_stock_products %}
+            <li>
+                <strong>{{ product.name }}</strong>: Only <strong>{{ product.stock_quantity }}</strong> left.
+                <a href="{% url 'admin:store_product_change' product.pk %}" style="color: #721c24; text-decoration: underline;">Update Stock →</a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="dashboard-grid">
+        <div class="card card-large">
+            <h3 class="card-title">Daily Revenue (Last 7 Days)</h3>
+            <div class="chart-container" style="position: relative; height:300px;">
+                <canvas id="salesChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card card-small">
+            <h3 class="card-title">Top 5 Selling Products</h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Sold</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in top_products %}
+                    <tr>
+                        <td>{{ item.product__name }}</td>
+                        <td class="bold">{{ item.total_sold }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="2" class="table-empty">No data available.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <h3 class="card-title">Recent Transactions (Last 5)</h3>
         <table class="table">
             <thead>
                 <tr>
-                    <th>Product</th>
-                    <th>Sold</th>
+                    <th>Order ID</th>
+                    <th>Customer</th>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Time</th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in top_products %}
+                {% for payment in recent_payments %}
                 <tr>
-                    <td>{{ item.product__name }}</td>
-                    <td class="bold">{{ item.total_sold }}</td>
+                    <td>#{{ payment.order.id }}</td>
+                    <td>{{ payment.order.customer.first_name }} {{ payment.order.customer.last_name }}</td>
+                    <td class="bold">${{ payment.amount }}</td>
+                    <td>{{ payment.method }}</td>
+                    <td>
+                        <span class="status {% if payment.status == 'pending' %}status-pending{% else %}status-success{% endif %}">
+                            {{ payment.status|upper }}
+                        </span>
+                    </td>
+                    <td class="muted">{{ payment.created_at|timesince }} ago</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="2" class="table-empty">No data.</td></tr>
+                <tr><td colspan="6" class="table-empty">No transactions found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
-
-<!-- Recent Transactions -->
-<div class="card">
-    <h3 class="card-title">Recent Transactions (Last 5)</h3>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Order ID</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Method</th>
-                <th>Status</th>
-                <th>Time</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for payment in recent_payments %}
-            <tr>
-                <td>#{{ payment.order.id }}</td>
-                <td>{{ payment.order.customer.first_name }} {{ payment.order.customer.last_name }}</td>
-                <td class="bold">${{ payment.amount }}</td>
-                <td>{{ payment.method }}</td>
-                <td>
-                    <span class="status {% if payment.status == 'pending' %}status-pending{% else %}status-success{% endif %}">
-                        {{ payment.status|upper }}
-                    </span>
-                </td>
-                <td class="muted">{{ payment.created_at|timesince }} ago</td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6" class="table-empty">No transactions found.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
